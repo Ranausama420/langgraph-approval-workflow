@@ -17,6 +17,14 @@ python -m pytest
 
 Replace REQUEST_ID with the ID printed by the first command. Review decisions are approve, edit, or reject. A rejected draft has no approved reply. Use --db PATH before the subcommand to choose a different SQLite file.
 
+## Web API and UI
+
+Start the local review desk with:
+
+    uvicorn api:app --reload
+
+Open http://127.0.0.1:8000. The UI creates drafts, shows the review queue, and lets a reviewer approve, edit, or reject a draft. The API provides POST /reviews, GET /reviews, GET /reviews/{id}, and POST /reviews/{id}/decision. Interactive API documentation is available at /docs.
+
 ## Design
 
 The request ID is the LangGraph thread ID. Each command opens the same SQLite checkpoint database. The review node pauses with the original draft and resumes using the reviewer's decision. A completed request rejects a second sequential review.
