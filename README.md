@@ -25,6 +25,18 @@ Start the local review desk with:
 
 Open http://127.0.0.1:8000. The UI creates drafts, shows the review queue, and lets a reviewer approve, edit, or reject a draft. The API provides POST /reviews, GET /reviews, GET /reviews/{id}, and POST /reviews/{id}/decision. Interactive API documentation is available at /docs.
 
+## Advanced local workflow
+
+The graph now runs this sequence before review:
+
+    classify -> safe local tools -> policy check -> human review
+
+Classification adds a category and urgency. The policy node blocks drafts containing secret-like phrases such as `password:` or `api key`. Tool execution is deterministic and local, so it is safe to replace later with authenticated customer or service-status integrations. Every completed review stores an audit event.
+
+The API has a small local RBAC layer. Send `X-User-Id: customer-demo` to create and view drafts, `X-User-Id: reviewer-demo` to make decisions, or `X-User-Id: manager-demo` to assign a reviewer. The manager endpoint is `POST /reviews/{id}/assign`. Requests without a user ID return 401, and unauthorized decisions return 403.
+
+The review registry uses a relational SQLite schema for local development and is isolated behind the API layer, making it straightforward to move to PostgreSQL later. Cloud deployment is intentionally outside this repository's current scope.
+
 ### UI screenshots
 
 ![Empty review desk](docs/review-desk-empty.svg)

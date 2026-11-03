@@ -5,11 +5,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from approval import execute
+from security import current_user, require_role
 
 DB = Path("approvals.sqlite")
 _lock = Lock()
@@ -25,9 +26,13 @@ class Decision(BaseModel):
     text: str | None = Field(default=None, max_length=20_000)
 
 
+class Assignment(BaseModel):
+    reviewer_id: str = Field(min_length=1, max_length=100)
+
+
 def init_db():
     with sqlite3.connect(DB) as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS reviews (id TEXT PRIMARY KEY, ticket_id TEXT, status TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        conn.execute("CREATE TABLE IF NOT EXISTS reviews (id TEXT PRIMARY KEY, ticket_id TEXT, status TEXT NOT NULL, reviewer_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
 
 
 def list_rows(status: str | None = None):
@@ -57,21 +62,24 @@ def home():
 
 
 @app.post("/reviews", status_code=201)
-def create_review(request: ReviewCreate):
+def create_review(request: ReviewCreate, user=Depends(current_user)):
+    require_role(user, "customer", "reviewer", "manager")
     with _lock:
         result = execute(DB, "start", text=request.draft)
         with sqlite3.connect(DB) as conn:
             conn.execute("INSERT INTO reviews(id,ticket_id,status) VALUES(?,?,?)", (result["id"], request.ticket_id, result["status"]))
-    return {**result, "ticket_id": request.ticket_id}
+    return {**result, "ticket_id": request.ticket_id, "created_by": user["id"], "category": result.get("category"), "urgency": result.get("urgency")}
 
 
 @app.get("/reviews")
-def reviews(status: str | None = Query(default=None, pattern="^(pending|completed)$")):
+def reviews(status: str | None = Query(default=None, pattern="^(pending|completed)$"), user=Depends(current_user)):
+    require_role(user, "customer", "reviewer", "manager")
     return {"items": list_rows(status)}
 
 
 @app.get("/reviews/{request_id}")
-def review(request_id: str):
+def review(request_id: str, user=Depends(current_user)):
+    require_role(user, "customer", "reviewer", "manager")
     try:
         result = execute(DB, "status", request_id=request_id)
     except ValueError as error:
@@ -81,7 +89,8 @@ def review(request_id: str):
 
 
 @app.post("/reviews/{request_id}/decision")
-def decide(request_id: str, request: Decision):
+def decide(request_id: str, request: Decision, user=Depends(current_user)):
+    require_role(user, "reviewer", "manager")
     with _lock:
         try:
             current = execute(DB, "status", request_id=request_id)
@@ -93,6 +102,18 @@ def decide(request_id: str, request: Decision):
             return result
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/reviews/{request_id}/assign")
+def assign(request_id: str, request: Assignment, user=Depends(current_user)):
+    require_role(user, "manager")
+    if request.reviewer_id not in ("reviewer-demo",):
+        raise HTTPException(status_code=400, detail="Reviewer does not exist.")
+    with sqlite3.connect(DB) as conn:
+        if not conn.execute("SELECT 1 FROM reviews WHERE id=?", (request_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Unknown request ID.")
+        conn.execute("UPDATE reviews SET reviewer_id=? WHERE id=?", (request.reviewer_id, request_id))
+    return {"id": request_id, "reviewer_id": request.reviewer_id}
 
 
 if __name__ == "__main__":

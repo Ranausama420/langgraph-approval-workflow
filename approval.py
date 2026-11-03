@@ -12,21 +12,50 @@ from langgraph.types import Command, interrupt
 
 class State(TypedDict, total=False):
     draft: str
+    ticket_id: str | None
+    category: str
+    urgency: str
+    safety: str
+    tool_results: dict
+    audit: list[dict]
     decision: Literal["approve", "edit", "reject"]
     approved_reply: str | None
 
 
+def classify(state: State) -> State:
+    text = state["draft"].lower()
+    urgency = "high" if any(word in text for word in ("urgent", "outage", "security", "breach")) else "normal"
+    category = "security" if any(word in text for word in ("password", "login", "security")) else "support"
+    return {"category": category, "urgency": urgency}
+
+
+def run_tools(state: State) -> State:
+    # Safe, deterministic tools are placeholders for future customer/status integrations.
+    return {"tool_results": {"knowledge_scope": "local support draft", "customer_lookup": "not configured"}}
+
+
+def policy_check(state: State) -> State:
+    blocked = any(word in state["draft"].lower() for word in ("api key", "password:", "secret:"))
+    return {"safety": "blocked" if blocked else "clear"}
+
+
 def review(state: State) -> State:
-    response = interrupt({"draft": state["draft"], "choices": ["approve", "edit", "reject"]})
+    response = interrupt({"draft": state["draft"], "choices": ["approve", "edit", "reject"], "urgency": state.get("urgency", "normal")})
     decision = response["decision"]
     reply = None if decision == "reject" else response.get("text", state["draft"])
-    return {"decision": decision, "approved_reply": reply}
+    return {"decision": decision, "approved_reply": reply, "audit": [{"event": "reviewed", "decision": decision}]}
 
 
 def build_graph(checkpointer):
     graph = StateGraph(State)
+    graph.add_node("classify", classify)
+    graph.add_node("tools", run_tools)
+    graph.add_node("policy_check", policy_check)
     graph.add_node("review", review)
-    graph.add_edge(START, "review")
+    graph.add_edge(START, "classify")
+    graph.add_edge("classify", "tools")
+    graph.add_edge("tools", "policy_check")
+    graph.add_conditional_edges("policy_check", lambda s: "blocked" if s.get("safety") == "blocked" else "review", {"blocked": END, "review": "review"})
     graph.add_edge("review", END)
     return graph.compile(checkpointer=checkpointer)
 
