@@ -25,6 +25,12 @@ Start the local review desk with:
 
 Open http://127.0.0.1:8000. The UI creates drafts, shows the review queue, and lets a reviewer approve, edit, or reject a draft. The API provides POST /reviews, GET /reviews, GET /reviews/{id}, and POST /reviews/{id}/decision. Interactive API documentation is available at /docs.
 
+### UI screenshots
+
+![Empty review desk](docs/review-desk-empty.svg)
+
+![Pending review with approval actions](docs/review-desk-pending.svg)
+
 ## Design
 
 The request ID is the LangGraph thread ID. Each command opens the same SQLite checkpoint database. The review node pauses with the original draft and resumes using the reviewer's decision. A completed request rejects a second sequential review.
