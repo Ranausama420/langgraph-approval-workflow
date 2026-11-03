@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langgraph-approval-workflow"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["langgraph>=1,<2", "langgraph-checkpoint-sqlite>=3,<4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+approval = "approval:main"
+
+[tool.setuptools]
+py-modules = ["approval"]
